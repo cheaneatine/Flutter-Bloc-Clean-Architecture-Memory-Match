@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'game_event.dart';
 import 'game_state.dart';
@@ -20,8 +21,55 @@ class GameBloc extends Bloc<GameEvent, GameState> {
     return cards;
   }
 
-  void _onFlipCard(FlipCard event, Emitter<GameState> emit) {
-    // Implement flipping and match logic here
+  void _onFlipCard(FlipCard event, Emitter<GameState> emit) async {
+    if (state.isCheckingMatch ||
+        state.flippedCardIds.contains(event.cardId) ||
+        state.cards.firstWhere((c) => c.id == event.cardId).isMatched) {
+      return;
+    }
+
+    final updatedCards = state.cards.map((card) {
+      if (card.id == event.cardId) {
+        return card.copyWith(isFaceUp: true);
+      }
+      return card;
+    }).toList();
+
+    final newFlipped = [...state.flippedCardIds, event.cardId];
+
+    emit(state.copyWith(cards: updatedCards, flippedCardIds: newFlipped));
+
+    if (newFlipped.length == 2) {
+      emit(state.copyWith(isCheckingMatch: true));
+
+      await Future.delayed(const Duration(seconds: 1));
+
+      final card1 = updatedCards.firstWhere((c) => c.id == newFlipped[0]);
+      final card2 = updatedCards.firstWhere((c) => c.id == newFlipped[1]);
+
+      bool isMatch = card1.content == card2.content;
+
+      final newCards = updatedCards.map((card) {
+        if (card.id == card1.id || card.id == card2.id) {
+          return isMatch
+              ? card.copyWith(isMatched: true)
+              : card.copyWith(isFaceUp: false);
+        }
+        return card;
+      }).toList();
+
+      final allMatched = newCards.every((card) => card.isMatched);
+
+      emit(
+        state.copyWith(
+          cards: newCards,
+          flippedCardIds: [],
+          isCheckingMatch: false,
+          hasWon: allMatched,
+          turns: state.turns + 1,
+        ),
+      );
+    }
   }
 
   void _onResetGame(ResetGame event, Emitter<GameState> emit) {
